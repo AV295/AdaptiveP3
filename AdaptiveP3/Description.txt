@@ -1,0 +1,239 @@
+# Speaking Script (10–12 Minutes)
+## AdaptiveP3: Privacy-Preserving SQL Proxy
+
+Good morning faculty members.
+Today I’m presenting our project, **AdaptiveP3**, which stands for **Adaptive Privacy-Preserving Proxy**.
+
+The core idea is simple:
+Instead of giving users direct database access, we place a smart middleware layer between users and the database.
+That middleware inspects every query, estimates privacy risk, enforces role-based controls, tracks suspicious query patterns, and applies differential privacy noise when needed.
+
+So this is not just “query forwarding.”
+It is **policy-driven privacy enforcement at query time**.
+
+---
+
+## 1) Problem Statement (about 1 minute)
+
+In many systems, especially in research and analytics, users need access to aggregate insights from sensitive data.
+But if users can repeatedly submit carefully crafted queries, they can infer private information about individuals.
+
+Traditional role-based permissions alone are often not enough.
+Even if all queries are technically “allowed,” combinations of queries can leak data.
+
+So we wanted to solve this practical problem:
+**How can we let users query data while reducing privacy leakage risk in real time?**
+
+AdaptiveP3 addresses this using four protections together:
+1. SQL query analysis and basic attack pattern detection
+2. Role-based privacy budgets
+3. Inference-risk tracking across recent query history
+4. Differential privacy on aggregate outputs
+
+---
+
+## 2) High-Level Architecture (about 2 minutes)
+
+The architecture has five layers:
+
+### Layer A: API Layer
+FastAPI exposes endpoints such as:
+- user registration
+- query submission
+- budget check
+- health check
+
+This is the user-facing interface.
+
+### Layer B: Proxy Orchestration Layer
+A middleware function acts as the “decision engine.”
+It receives each query and routes it through a privacy/security pipeline before executing anything on PostgreSQL.
+
+### Layer C: Core Privacy and Security Logic
+This is the heart of the project and contains four modules:
+- Query analyzer
+- ABAC-style budget policy
+- Inference risk tracker
+- Differential privacy noise module
+
+### Layer D: Data Access Layer
+There are two data stores with different responsibilities:
+- PostgreSQL: actual business data queried by users
+- SQLite: lightweight local storage of query history for inference tracking
+
+### Layer E: Model Layer and Configuration
+- Pydantic models define user roles and state
+- Config centralizes thresholds, budgets, and DB settings
+
+So overall architecture is modular and easy to explain:
+**API → Proxy Pipeline → Policy + Privacy Modules → Databases**
+
+---
+
+## 3) End-to-End Request Flow (about 2.5 minutes)
+
+Now I’ll explain exactly how one query is processed.
+
+### Step 1: User registration
+A client first registers with username and role.
+Role can be admin, researcher, or guest.
+Each role gets an initial privacy budget epsilon.
+For example, admin gets higher budget, guest gets lower budget.
+
+### Step 2: Query submission
+User sends SQL query to the query endpoint.
+The proxy fetches that user context and starts policy checks.
+
+### Step 3: SQL analysis
+The query analyzer parses SQL and extracts:
+- table names
+- selected columns
+- aggregate functions
+- where conditions
+- sensitivity heuristic
+
+It also checks suspicious patterns like likely injection attempts or unsafe multi-statement forms.
+If unsafe, request is rejected immediately.
+
+### Step 4: Inference-risk check
+Before execution, system compares the current query with recent historical queries by the same user.
+If there are too many overlapping queries in a short window, it flags possible inference attack behavior.
+Then it blocks execution to prevent triangulation attempts.
+
+### Step 5: Budget enforcement
+The system checks if user has enough remaining epsilon budget for this query’s sensitivity cost.
+If budget is insufficient, query is denied.
+
+### Step 6: Query execution
+If all checks pass, query runs on PostgreSQL.
+
+### Step 7: Differential privacy output protection
+If query is aggregate type, Laplace noise is added to numeric result fields.
+This preserves utility while reducing privacy leakage risk.
+
+### Step 8: Budget deduction and history logging
+The user’s epsilon is reduced based on sensitivity cost.
+Query metadata is stored in history store for future inference-risk checks.
+
+Finally response includes:
+- success status
+- (possibly noised) result
+- analysis metadata
+- updated remaining budget
+
+This complete chain is what makes the project “adaptive.”
+It does not rely on static permission checks only.
+
+---
+
+## 4) Core Modules and What Each One Does (about 2 minutes)
+
+### Query Analyzer Module
+- Input: raw SQL query
+- Output: structured analysis object
+- Purpose: early risk detection + sensitivity estimation
+
+### ABAC Budget Module
+- Maintains role-based privacy budget rules
+- Functions include initial budget assignment, budget availability check, and deduction logic
+- Purpose: limit cumulative privacy exposure over time
+
+### Inference Tracker Module
+- Uses query history overlap and time-window logic
+- Flags repeated related probing patterns
+- Purpose: detect “many small queries reveal one private fact” style attacks
+
+### Differential Privacy Module
+- Applies Laplace noise to aggregate outputs
+- Noise scale tied to epsilon and sensitivity
+- Purpose: mathematically reduce exact data leakage from aggregate answers
+
+### Database Modules
+- PostgreSQL module executes SQL and returns rows
+- History store uses SQLite to persist query audit metadata
+
+This separation of concerns is one of the strongest engineering points of the project.
+It makes testing and future extension easier.
+
+---
+
+## 5) How to Set Up and Use the Project (about 1.5 minutes)
+
+Now practical usage flow.
+
+### Environment setup
+1. Create/activate Python virtual environment
+2. Install dependencies from requirements file
+3. Configure environment variables for PostgreSQL connection and policy settings
+
+### Database setup
+1. Run SQL script to create application database and user
+2. Run seed script to create employees table and sample data
+
+### Start server
+Run FastAPI app via uvicorn on port 8000.
+
+### Basic usage sequence
+1. Call register endpoint with username and role
+2. Submit query endpoint with SQL string
+3. Observe returned data and privacy metadata
+4. Call budget endpoint to monitor remaining epsilon
+
+So implementation is API-first and demo-friendly.
+You can show behavior live in Swagger UI or Postman.
+
+---
+
+## 6) Demo Script You Can Present Live (about 1 minute)
+
+In the live demo, do this sequence:
+
+1. Register researcher user.
+2. Query `SELECT AVG(salary) FROM employees WHERE department='Engineering';`
+3. Show result and explain that output may include DP noise.
+4. Check budget endpoint and show epsilon has decreased.
+5. Fire multiple overlapping narrow queries quickly.
+6. Show system blocks with inference-risk message.
+7. Optionally try suspicious query pattern and show analyzer rejection.
+
+This demo clearly proves that controls are active, not just theoretical.
+
+---
+
+## 7) Limitations and Future Improvements (about 1 minute)
+
+It is important to present limitations honestly:
+
+1. Identity/auth is basic; username-based registration is not production-grade authentication.
+2. SQL threat detection is heuristic, not a full secure SQL firewall.
+3. Inference detection is overlap-based heuristic, not formal adversarial proof.
+4. User budget state is in memory and resets on server restart.
+5. Differential privacy budget/noise policy can be further calibrated for stronger theoretical guarantees.
+
+Future roadmap:
+- integrate JWT/OAuth and stronger authorization
+- persist user budgets in durable DB
+- add stronger SQL parsing and query allowlist policies
+- improve formal privacy accounting and audit dashboards
+- add role-specific policy templates and per-table sensitivity maps
+
+Showing these trade-offs demonstrates maturity and realistic engineering judgment.
+
+---
+
+## 8) Closing (30–40 seconds)
+
+To conclude:
+AdaptiveP3 demonstrates a practical architecture for privacy-preserving analytics access.
+It combines query-time analysis, adaptive policy enforcement, inference-aware monitoring, and differential privacy in one coherent pipeline.
+
+The key contribution is not just one algorithm, but **layered protection with modular implementation**.
+That makes it useful both as a prototype and as a strong foundation for production hardening.
+
+Thank you. I’m happy to take questions.
+
+---
+
+## Optional 30-Second Backup Summary (if time is cut)
+
+AdaptiveP3 is a FastAPI middleware proxy for PostgreSQL that protects sensitive analytics by combining SQL risk analysis, role-based privacy budgets, inference attack tracking from query history, and differential privacy noise on aggregate outputs. Every query passes through this security pipeline before execution, and budget/state are updated after each request. The project is modular, demo-ready, and clearly extensible toward production controls like strong auth and persistent policy state.
