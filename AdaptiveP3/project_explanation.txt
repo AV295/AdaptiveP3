@@ -1,0 +1,369 @@
+================================================================================
+ADAPTIVE P3 (AP3) — COMPREHENSIVE PROJECT OVERVIEW
+================================================================================
+
+Your project is a **FastAPI-based Privacy-Preserving SQL Proxy** that sits 
+between clients and PostgreSQL, enforcing security and privacy on every query.
+
+================================================================================
+WHAT IS THIS PROJECT?
+================================================================================
+
+**AdaptiveP3** is a middleware/proxy system that:
+- ✅ Intercepts SQL queries from users
+- ✅ Analyzes them for security threats (SQL injection)
+- ✅ Checks user permissions and privacy budgets
+- ✅ Detects suspicious query patterns (inference attacks)
+- ✅ Applies differential privacy noise to results
+- ✅ Tracks and audits all queries
+
+**Think of it as a "privacy-smart firewall" for database queries.**
+
+================================================================================
+WHAT IS IT PROTECTING AGAINST?
+================================================================================
+
+1. **SQL Injection Attacks** — Malicious SQL patterns (e.g., `' OR '1'='1`, DROP TABLE)
+2. **Inference Attacks** — Users making many overlapping queries to guess private info
+3. **Unauthorized Access** — Role-based budget controls (admin gets more access than guest)
+4. **Privacy Leakage** — Differential privacy adds noise to aggregate results to prevent 
+   reverse-engineering individual data
+
+================================================================================
+ARCHITECTURE (5 LAYERS)
+================================================================================
+
+┌─────────────────────────────────────┐
+│    Layer 1: API Layer (FastAPI)     │  ← Receives HTTP requests
+│  /register, /query, /budget, /health│
+└────────────┬────────────────────────┘
+             │
+┌────────────▼────────────────────────┐
+│ Layer 2: Proxy Orchestration         │  ← Decision engine that coordinates
+│   (middleware/proxy.py)              │     all security checks
+└────────────┬────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────────────┐
+│ Layer 3: Core Security & Privacy Modules                │
+├──────────────────────────────────────────────────────────┤
+│ ✓ Query Analyzer       (SQL parsing & injection check)   │
+│ ✓ ABAC Policy          (role-based budget checks)        │
+│ ✓ Inference Tracker    (pattern detection)               │
+│ ✓ Differential Privacy (Laplace noise application)       │
+└────────────┬─────────────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────┐
+│ Layer 4: Data Access Layer          │
+├─────────────────────────────────────┤
+│ • PostgreSQL (main business data)    │
+│ • SQLite (query history for audit)   │
+└─────────────────────────────────────┘
+             │
+┌────────────▼────────────────────────┐
+│ Layer 5: Models & Configuration     │
+├─────────────────────────────────────┤
+│ • User model (Pydantic)              │
+│ • UserRole enum (admin/researcher/   │
+│   guest)                             │
+│ • config.py (centralized settings)   │
+└─────────────────────────────────────┘
+
+================================================================================
+FILE STRUCTURE & WHAT EACH FILE DOES
+================================================================================
+
+AdaptiveP3/
+│
+├── main.py                           ⭐ ENTRY POINT
+│   └─ FastAPI app definition
+│   └─ 5 HTTP endpoints: /, /health, /register, /budget, /query
+│   └─ In-memory user storage (_users dict)
+│   └─ Request/Response schemas
+│
+├── config.py                         🔧 CONFIGURATION HUB
+│   └─ PostgreSQL connection settings
+│   └─ Privacy budgets per role (admin=10, researcher=5, guest=1)
+│   └─ Inference thresholds (max 5 overlapping queries in 1 hour)
+│   └─ SQLite history DB path
+│
+├── models/
+│   └─ user.py                        👤 USER MODEL
+│      └─ UserRole enum (admin, researcher, guest)
+│      └─ User Pydantic model (username, role, epsilon_remaining)
+│
+├── core/                             ❤️  SECURITY HEART
+│   ├─ abac.py                        📊 ATTRIBUTE-BASED ACCESS CONTROL
+│   │  └─ get_initial_budget()        (assign ε per role)
+│   │  └─ has_budget()                (check if user has enough ε)
+│   │  └─ deduct_budget()             (subtract cost from user's ε)
+│   │
+│   ├─ query_analyzer.py              🔍 SQL QUERY ANALYZER
+│   │  └─ analyze_query()             (parse SQL, extract metadata)
+│   │  └─ _extract_tables()           (find FROM/JOIN table names)
+│   │  └─ _extract_aggregates()       (find COUNT, SUM, AVG, MIN, MAX)
+│   │  └─ _detect_sql_injection()     (heuristic injection detection)
+│   │  └─ _compute_sensitivity()      (estimate privacy risk score)
+│   │
+│   ├─ differential_privacy.py        🎲 PRIVACY NOISE ENGINE
+│   │  └─ add_laplace_noise()         (add Laplace noise to 1 value)
+│   │  └─ add_noise_to_row()          (add noise to all numeric fields in 1 row)
+│   │  └─ add_noise_to_resultset()    (apply noise to entire result set)
+│   │
+│   └─ inference_tracker.py           🕵️ ATTACK DETECTION
+│      └─ assess_inference_risk()     (check query history for patterns)
+│      └─ InferenceRisk class         (container for risk assessment)
+│
+├── db/                               🗄️  DATA LAYER
+│   ├─ postgres.py                    📀 POSTGRESQL CONNECTOR
+│   │  └─ get_pg_connection()         (create connection to PostgreSQL)
+│   │  └─ execute_query()             (run SQL, return rows as dicts)
+│   │
+│   └─ history_store.py               📋 SQLITE QUERY AUDIT LOG
+│      └─ _get_connection()           (connect to query_history.db)
+│      └─ record_query()              (store query metadata after execution)
+│      └─ get_overlapping_queries()   (retrieve recent similar queries)
+│
+├── middleware/
+│   └─ proxy.py                       🔗 ORCHESTRATION PIPELINE
+│      └─ process_query()             (runs all 8 security steps)
+│
+├── Requirements.txt                  📦 PYTHON DEPENDENCIES
+│
+├── README.md                         📖 DOCUMENTATION
+│
+└── Description.txt                   🎯 PRESENTATION SCRIPT
+
+Additional files:
+  .env                 ← Environment variables (DB credentials)
+  .gitignore
+  query_history.db     ← SQLite database (created at runtime)
+  __pycache__/         ← Compiled Python bytecode
+
+================================================================================
+HOW CODES ARE LINKED (DATA FLOW)
+================================================================================
+
+REQUEST FLOW FOR /query ENDPOINT:
+────────────────────────────────
+
+1. Client sends HTTP POST to /query with:
+   {
+     "username": "alice",
+     "sql": "SELECT AVG(salary) FROM employees WHERE department='Engineering'"
+   }
+
+2. main.py receives request
+   ↓
+3. Looks up user "alice" in _users dict
+   ↓
+4. Calls middleware.proxy.process_query(user, sql)
+   ↓
+5. STEP 1: Analyze Query
+   └─ core.query_analyzer.analyze_query(sql)
+      • sqlparse library parses SQL
+      • Extracts: tables=['employees'], aggregates=['avg'], sensitivity=2.5
+      • Checks for injection patterns (looks for "' OR '1'='1", etc.)
+      • Result: QueryAnalysis object
+   ↓
+6. STEP 2: Check for Injection
+   └─ If analysis.is_dangerous == True
+      → Return 403 error
+   ↓
+7. STEP 3: Role Check
+   └─ If query is UPDATE/DELETE and user is not admin
+      → Return 403 error
+   ↓
+8. STEP 4: Inference Risk Assessment
+   └─ core.inference_tracker.assess_inference_risk()
+      • Calls db.history_store.get_overlapping_queries()
+      • Retrieves all queries by "alice" in past 1 hour that touched 'employees' table
+      • Counts overlaps
+      • If count >= 5 (threshold) → block
+   ↓
+9. STEP 5: Check Privacy Budget
+   └─ core.abac.has_budget(user, query_cost)
+      • query_cost = sensitivity (2.5 for this AVG query with WHERE)
+      • user.epsilon_remaining = remaining budget for "alice"
+      • If epsilon_remaining < 2.5 → deny (return 403)
+   ↓
+10. STEP 6: Execute Query
+    └─ db.postgres.execute_query(sql)
+       • Creates connection to PostgreSQL
+       • Runs SQL: SELECT AVG(salary) FROM employees WHERE department='Engineering'
+       • Returns rows as list of dicts: [{'avg': 72500.50}]
+    ↓
+11. STEP 7: Apply Differential Privacy Noise
+    └─ If analysis.is_aggregate == True:
+       core.differential_privacy.add_noise_to_resultset(rows, epsilon, sensitivity)
+       • Splits epsilon budget across rows
+       • For each numeric field, calls add_laplace_noise()
+       • Adds random noise from Laplace distribution: Lap(sensitivity/epsilon)
+       • Result: [{'avg': 72501.23}]  (noised!)
+    ↓
+12. STEP 8: Deduct Budget & Log Query
+    └─ core.abac.deduct_budget(user, query_cost)
+       • Reduces user.epsilon_remaining by 2.5
+       • "alice" now has 5 - 2.5 = 2.5 left
+    └─ db.history_store.record_query()
+       • Stores in SQLite: (username, tables, columns, has_where, raw_sql, timestamp)
+    ↓
+13. Return Response:
+    {
+      "status": "success",
+      "user": {"username": "alice", "role": "researcher", "epsilon_remaining": 2.5},
+      "results": [{"avg": 72501.23}],
+      "privacy_note": "Laplace noise applied to aggregate results",
+      "query_analysis": {...}
+    }
+
+================================================================================
+WHAT EACH FILE RUNS (RUNTIME EXECUTION)
+================================================================================
+
+FILE                           WHEN IT RUNS              WHAT IT DOES
+────────────────────────────────────────────────────────────────────────────
+main.py                        Server startup            Starts FastAPI app on port 8000
+config.py                      On import                 Loads environment variables & policy settings
+models/user.py                 When user registers       Defines User data structure
+core/query_analyzer.py         On every query            Parses SQL, detects injection, scores sensitivity
+core/abac.py                   On every query            Checks & deducts privacy budget
+core/inference_tracker.py      On every query            Detects suspicious query patterns
+core/differential_privacy.py   On aggregate queries      Adds noise to results
+db/postgres.py                 During query execution    Connects to DB, runs SQL
+db/history_store.py            After query succeeds      Records query metadata to SQLite
+middleware/proxy.py            On every query            Orchestrates all 8 steps
+
+================================================================================
+EXAMPLE: COMPLETE WORKFLOW
+================================================================================
+
+SCENARIO: User "alice" (researcher) runs `SELECT COUNT(*) FROM employees`
+
+Timeline:
+─────────────────────────────────────────────────────────────
+
+T=0s  Alice registers (via POST /register)
+      → Creates User(username="alice", role="researcher", epsilon_remaining=5.0)
+      → _users["alice"] = User(...)
+
+T=5s  Alice makes 1st query: SELECT COUNT(*) FROM employees
+      ✓ Passes all checks (no injection, budget enough, no inference risk)
+      ✓ Executed on PostgreSQL → Result: [{'count': 150}]
+      ✓ Sensitivity = 1.0 (COUNT without WHERE)
+      ✓ Noise applied → [{'count': 151.2}] (DP-ified)
+      ✓ Budget deducted: 5.0 - 1.0 = 4.0
+      ✓ Query stored in SQLite history
+      ✓ Returns result to Alice
+
+T=6s  Alice makes 2nd query: SELECT COUNT(*) FROM employees WHERE dept='Sales'
+      ✓ Similar logic
+      ✓ Sensitivity = 1.5 (COUNT with WHERE)
+      ✓ Budget: 4.0 - 1.5 = 2.5
+      ✓ Added to history
+
+T=7s  Alice makes 3rd query: SELECT COUNT(*) FROM employees WHERE dept='Engineering'
+      ✓ Sensitivity = 1.5
+      ✓ Budget: 2.5 - 1.5 = 1.0
+      ✓ Added to history
+
+T=8s  Alice makes 4th & 5th queries (similar pattern)
+      ✓ Budget decreases each time
+
+T=10s Alice attempts 6th query with overlapping table
+      ✗ BLOCKED: "Inference attack risk: 5 overlapping queries on table(s) ['employees'] 
+                   in the last 60 min (4 with WHERE filters). Threshold is 5."
+      → Returns 429 (Too Many Requests)
+
+T=65m (1 hour later)
+      History window expires
+      Alice can query again
+
+================================================================================
+SECURITY MECHANISMS EXPLAINED
+================================================================================
+
+MECHANISM               PURPOSE                    HOW IT WORKS
+────────────────────────────────────────────────────────────────────────────
+SQL Injection Guard     Prevent malicious SQL     Regex pattern matching + multi-statement 
+                                                   detection via sqlparse
+
+Role-Based Budgets      Limit cumulative access   Each role gets an epsilon (ε) budget; 
+                                                   queries deduct from it
+
+Inference Tracking      Prevent data              Counts overlapping queries in time window; 
+                        triangulation              blocks after threshold
+
+Differential Privacy    Prevent exact data        Adds Laplace noise: Lap(Δf/ε); 
+                        leakage                    higher ε = less noise
+
+================================================================================
+HOW TO RUN THE PROJECT
+================================================================================
+
+# 1. Install dependencies
+pip install -r Requirements.txt
+
+# 2. Set PostgreSQL credentials (in .env or environment)
+export POSTGRES_HOST=localhost
+export POSTGRES_DB=ap3_db
+export POSTGRES_USER=postgres
+export POSTGRES_PASSWORD=postgres
+
+# 3. Start the server
+uvicorn main:app --reload --port 8000
+
+# 4. Open Swagger UI
+# Visit: http://localhost:8000/docs
+
+EXAMPLE API CALLS:
+─────────────────
+
+# Register a guest user
+curl -X POST http://localhost:8000/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "bob", "role": "guest"}'
+
+# Submit a query
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"username": "bob", "sql": "SELECT COUNT(*) FROM employees"}'
+
+# Check remaining budget
+curl http://localhost:8000/budget/bob
+
+================================================================================
+KEY INSIGHTS
+================================================================================
+
+1. **Modular Design** — Each security layer is separate (query analyzer, 
+   budget checker, noise engine)
+
+2. **Adaptive** — Adjusts privacy level based on user role and query pattern
+
+3. **Audit Trail** — SQLite keeps history for forensics
+
+4. **Non-Destructive** — Uses Pydantic's `.model_copy()` to create new user objects
+
+5. **Differential Privacy** — Mathematically rigorous (uses IBM's `diffprivlib` library)
+
+6. **Budget Semantics** — ε represents "privacy cost"; lower ε = stronger 
+   privacy guarantee
+
+================================================================================
+SUMMARY
+================================================================================
+
+This is a production-grade prototype that combines 4 privacy technologies 
+into one coherent system!
+
+The AdaptiveP3 project is a sophisticated privacy-preserving middleware that:
+- Sits between clients and PostgreSQL
+- Runs 8 sequential security checks on every query
+- Enforces role-based privacy budgets (epsilon)
+- Detects and blocks inference attacks
+- Applies differential privacy to aggregate results
+- Maintains an audit log of all queries
+
+All components are modular, testable, and extensible for production use.
+
+================================================================================

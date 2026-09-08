@@ -6,8 +6,9 @@ WHERE clauses), computes a heuristic sensitivity score, and detects
 basic SQL injection patterns.
 """
 
+import re
 import sqlparse
-from sqlparse.sql import IdentifierList, Identifier, Where, Function
+from sqlparse.sql import IdentifierList, Identifier, Where, Function, Comparison, Parenthesis
 from sqlparse.tokens import Keyword, DML
 
 
@@ -32,6 +33,7 @@ class QueryAnalysis:
         sensitivity: float,
         is_dangerous: bool,
         danger_reason: str | None = None,
+        predicates: list[str] | None = None,
     ):
         self.raw_sql = raw_sql
         self.is_select = is_select
@@ -43,6 +45,8 @@ class QueryAnalysis:
         self.sensitivity = sensitivity
         self.is_dangerous = is_dangerous
         self.danger_reason = danger_reason
+        self.predicates = predicates or []
+
 
 
 # ── Internal helpers ─────────────────────────────────────────────────
@@ -137,12 +141,70 @@ def _compute_sensitivity(aggregates: list[str], has_where: bool) -> float:
     return round(base, 4)
 
 
+def _extract_predicates(parsed) -> list[str]:
+    """Extract normalized predicates from WHERE clauses (e.g. department='engineering')."""
+    predicates: list[str] = []
+    for token in parsed.tokens:
+        if isinstance(token, Where):
+            for subtoken in token.tokens:
+                if isinstance(subtoken, Comparison):
+                    clean = "".join(subtoken.value.split()).lower()
+                    predicates.append(clean)
+            if not predicates:
+                val = re.sub(r"^\s*WHERE\s+", "", token.value, flags=re.IGNORECASE)
+                parts = re.split(r"\s+(?:AND|OR)\s+", val, flags=re.IGNORECASE)
+                for p in parts:
+                    clean = "".join(p.split()).lower()
+                    if clean:
+                        predicates.append(clean)
+    return predicates
+
+
+def _extract_columns(parsed, tables: list[str]) -> list[str]:
+    """Extract column names referenced in SELECT, aggregates, and WHERE."""
+    cols: set[str] = set()
+    table_set = {t.lower() for t in tables}
+
+    for token in parsed.tokens:
+        if isinstance(token, Where):
+            for st in token.tokens:
+                if isinstance(st, Comparison) and st.left:
+                    cols.add(str(st.left).strip().lower())
+        elif isinstance(token, Function):
+            for p in token.tokens:
+                if isinstance(p, Parenthesis):
+                    val = p.value.strip("() ")
+                    for item in val.split(","):
+                        item = item.strip().lower()
+                        if item and item != "*":
+                            cols.add(item)
+        elif isinstance(token, IdentifierList):
+            for ident in token.get_identifiers():
+                if isinstance(ident, Function):
+                    for p in ident.tokens:
+                        if isinstance(p, Parenthesis):
+                            val = p.value.strip("() ")
+                            for item in val.split(","):
+                                item = item.strip().lower()
+                                if item and item != "*":
+                                    cols.add(item)
+                else:
+                    name = ident.get_real_name() or str(ident)
+                    cols.add(name.strip().lower())
+        elif isinstance(token, Identifier):
+            name = token.get_real_name() or str(token)
+            cols.add(name.strip().lower())
+
+    cleaned = [c for c in cols if c not in table_set and c not in AGGREGATE_FUNCTIONS]
+    return sorted(cleaned)
+
+
 # ── Public API ───────────────────────────────────────────────────────
 
 def analyze_query(raw_sql: str) -> QueryAnalysis:
     """
     Parse a raw SQL string and return a :class:`QueryAnalysis` containing
-    tables, aggregates, sensitivity score, and injection flags.
+    tables, aggregates, sensitivity score, predicates, and injection flags.
     """
     parsed = sqlparse.parse(raw_sql.strip())[0]
 
@@ -157,21 +219,16 @@ def analyze_query(raw_sql: str) -> QueryAnalysis:
     # Tables
     tables = _extract_tables(parsed)
 
-    # Columns (light extraction from SELECT identifiers)
-    columns: list[str] = []
-    for token in parsed.tokens:
-        if isinstance(token, IdentifierList):
-            for ident in token.get_identifiers():
-                columns.append(str(ident))
-        elif isinstance(token, Identifier):
-            columns.append(str(token))
+    # Columns (fine-grained extraction)
+    columns = _extract_columns(parsed, tables)
 
     # Aggregates
     aggregates = _extract_aggregates(parsed)
     is_aggregate = len(aggregates) > 0
 
-    # WHERE present?
+    # WHERE present and predicates
     has_where = any(isinstance(token, Where) for token in parsed.tokens)
+    predicates = _extract_predicates(parsed)
 
     # Sensitivity
     sensitivity = _compute_sensitivity(aggregates, has_where)
@@ -187,4 +244,6 @@ def analyze_query(raw_sql: str) -> QueryAnalysis:
         sensitivity=sensitivity,
         is_dangerous=is_dangerous,
         danger_reason=danger_reason,
+        predicates=predicates,
     )
+
