@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="light">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AP3 — Adaptive Privacy-Preserving Proxy Playground</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             /* Light Theme Variables (Default) */
@@ -549,9 +552,20 @@
             font-weight: 700;
         }
 
-        .risk-safe { background: var(--risk-safe-bg); color: var(--risk-safe-text); }
-        .risk-medium { background: var(--risk-med-bg); color: var(--risk-med-text); }
-        .risk-high { background: var(--risk-high-bg); color: var(--risk-high-text); }
+        .risk-safe {
+            background: var(--risk-safe-bg);
+            color: var(--risk-safe-text);
+        }
+
+        .risk-medium {
+            background: var(--risk-med-bg);
+            color: var(--risk-med-text);
+        }
+
+        .risk-high {
+            background: var(--risk-high-bg);
+            color: var(--risk-high-text);
+        }
 
         .toast-banner {
             position: fixed;
@@ -570,6 +584,7 @@
         }
     </style>
 </head>
+
 <body>
 
     <!-- Navigation Header -->
@@ -605,7 +620,8 @@
                 <div class="guide-title">
                     <span>✨ Interactive Guided Tour: Experience the 4 Core Pillars in 1-Click</span>
                 </div>
-                <span style="font-size: 0.8rem; color: var(--text-muted);">Click any step below to test in real-time</span>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Click any step below to test in
+                    real-time</span>
             </div>
             <div class="guide-steps-grid">
                 <button class="step-btn" onclick="runScenario('register')">
@@ -638,12 +654,17 @@
                     <span class="step-name">6. Test SQLi Guard</span>
                     <span class="step-subtext">Piggyback & Tautology Block</span>
                 </button>
+                <button class="step-btn" onclick="runScenario('diff')">
+                    <span class="step-badge" style="background: var(--accent-rose);">Scenario 7 (ML)</span>
+                    <span class="step-name">7. Differencing Attack</span>
+                    <span class="step-subtext">Isolate via subpopulation delta</span>
+                </button>
             </div>
         </section>
 
         <!-- Live Telemetry / Meters -->
         <section class="metrics-grid">
-            <!-- Triangulation Risk Gauge -->
+            <!-- Triangulation Risk Gauge (Hybrid) -->
             <div class="metric-card">
                 <div class="metric-label">
                     <span>Live Triangulation Risk r(u, q)</span>
@@ -651,20 +672,37 @@
                 </div>
                 <div class="metric-value" id="meter-risk" style="color: var(--accent-emerald);">0.0000</div>
                 <div class="progress-bar-container">
-                    <div class="progress-bar-fill" id="bar-risk" style="width: 0%; background: var(--accent-emerald);"></div>
+                    <div class="progress-bar-fill" id="bar-risk" style="width: 0%; background: var(--accent-emerald);">
+                    </div>
                 </div>
-                <div class="metric-desc">Subpopulation predicate overlap & time decay</div>
+                <div class="metric-desc">Hybrid Arbiter: max(Heuristic, ML)</div>
+            </div>
+
+            <!-- Machine Learning Trajectory Attack Classifier -->
+            <div class="metric-card">
+                <div class="metric-label">
+                    <span>ML Trajectory Model</span>
+                    <span id="meter-attack-pattern" class="risk-badge risk-safe">BENIGN</span>
+                </div>
+                <div class="metric-value" id="meter-ml-risk" style="color: var(--accent-emerald);">0.0000</div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="bar-ml-risk" style="width: 0%; background: var(--accent-emerald);">
+                    </div>
+                </div>
+                <div class="metric-desc" id="meter-ml-desc">Ensemble Random Forest Trajectory Model</div>
             </div>
 
             <!-- Dynamic Epsilon Coupling -->
             <div class="metric-card">
                 <div class="metric-label">
                     <span>Effective Epsilon ε_eff</span>
-                    <span style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--accent-indigo);">Coupled</span>
+                    <span
+                        style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--accent-indigo);">Coupled</span>
                 </div>
                 <div class="metric-value" id="meter-epsilon" style="color: var(--accent-indigo);">1.0000</div>
                 <div class="progress-bar-container">
-                    <div class="progress-bar-fill" id="bar-epsilon" style="width: 100%; background: var(--accent-indigo);"></div>
+                    <div class="progress-bar-fill" id="bar-epsilon"
+                        style="width: 100%; background: var(--accent-indigo);"></div>
                 </div>
                 <div class="metric-desc">Formula: ε_eff = ε_role · (1 - r)^γ</div>
             </div>
@@ -673,11 +711,13 @@
             <div class="metric-card">
                 <div class="metric-label">
                     <span>Laplace Noise Scale b</span>
-                    <span style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--accent-cyan);">Δf / ε_eff</span>
+                    <span style="font-family: 'JetBrains Mono'; font-weight: 700; color: var(--accent-cyan);">Δf /
+                        ε_eff</span>
                 </div>
                 <div class="metric-value" id="meter-noise" style="color: var(--accent-cyan);">5.2500</div>
                 <div class="progress-bar-container">
-                    <div class="progress-bar-fill" id="bar-noise" style="width: 25%; background: var(--accent-cyan);"></div>
+                    <div class="progress-bar-fill" id="bar-noise" style="width: 25%; background: var(--accent-cyan);">
+                    </div>
                 </div>
                 <div class="metric-desc">Perturbation scale added to aggregates</div>
             </div>
@@ -686,11 +726,12 @@
             <div class="metric-card">
                 <div class="metric-label">
                     <span>Remaining Session Budget</span>
-                    <span id="meter-budget-role" style="color: var(--accent-amber); font-weight: 700;">10.0 ε</span>
+                    <span id="meter-budget-role" style="color: var(--accent-amber); font-weight: 700;"></span>
                 </div>
                 <div class="metric-value" id="meter-budget" style="color: var(--accent-amber);">10.0000</div>
                 <div class="progress-bar-container">
-                    <div class="progress-bar-fill" id="bar-budget" style="width: 100%; background: var(--accent-amber);"></div>
+                    <div class="progress-bar-fill" id="bar-budget"
+                        style="width: 100%; background: var(--accent-amber);"></div>
                 </div>
                 <div class="metric-desc">Sequential privacy loss composition (Σ ε_eff)</div>
             </div>
@@ -705,11 +746,14 @@
                         <span>⚡ SQL Query Console</span>
                     </div>
                     <div>
-                        <select id="query-preset" class="input-control" style="width: auto; padding: 4px 10px; font-size: 0.78rem;" onchange="applyPreset(this.value)">
+                        <select id="query-preset" class="input-control"
+                            style="width: auto; padding: 4px 10px; font-size: 0.78rem;"
+                            onchange="applyPreset(this.value)">
                             <option value="">Load Preset SQL...</option>
                             <option value="broad">Broad Query (Dept AVG)</option>
                             <option value="narrow1">Narrowing Query (Salary Filter)</option>
                             <option value="target">Target Query (Alice Isolate)</option>
+                            <option value="differencing">Differencing Attack Probe (id != 1002)</option>
                             <option value="sqli">SQL Injection Attack</option>
                         </select>
                     </div>
@@ -717,11 +761,13 @@
                 <div class="panel-body">
                     <div class="form-row">
                         <div style="flex: 1;">
-                            <label style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Username</label>
+                            <label
+                                style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Username</label>
                             <input type="text" id="input-username" class="input-control" value="alice_researcher">
                         </div>
                         <div style="flex: 1;">
-                            <label style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Role</label>
+                            <label
+                                style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">Role</label>
                             <select id="input-role" class="input-control" onchange="registerUser()">
                                 <option value="researcher">Researcher (10.0 ε)</option>
                                 <option value="guest">Guest (2.0 ε)</option>
@@ -731,8 +777,11 @@
                     </div>
 
                     <div>
-                        <label style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">SQL Statement</label>
-                        <textarea id="input-sql" class="input-control">SELECT AVG(salary) FROM employees WHERE department = 'Engineering'</textarea>
+                        <label
+                            style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">SQL
+                            Statement</label>
+                        <textarea id="input-sql"
+                            class="input-control">SELECT AVG(salary) FROM employees WHERE department = 'Engineering'</textarea>
                     </div>
 
                     <button class="btn-execute" onclick="submitQuery()">
@@ -771,7 +820,9 @@
                             </tr>
                         </thead>
                         <tbody id="history-tbody">
-                            <tr><td colspan="4" style="color: var(--text-muted);">No queries recorded yet.</td></tr>
+                            <tr>
+                                <td colspan="4" style="color: var(--text-muted);">No queries recorded yet.</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -834,6 +885,7 @@
             if (val === 'broad') sqlEl.value = "SELECT AVG(salary) FROM employees WHERE department = 'Engineering'";
             if (val === 'narrow1') sqlEl.value = "SELECT AVG(salary) FROM employees WHERE department = 'Engineering' AND salary >= 110000";
             if (val === 'target') sqlEl.value = "SELECT AVG(salary) FROM employees WHERE department = 'Engineering' AND name = 'Alice'";
+            if (val === 'differencing') sqlEl.value = "SELECT SUM(salary) FROM employees WHERE department = 'Engineering' AND id != 1002";
             if (val === 'sqli') sqlEl.value = "SELECT * FROM employees WHERE 1=1";
         }
 
@@ -915,7 +967,7 @@
                 const effEps = metrics.effective_epsilon;
                 const noise = metrics.noise_scale;
 
-                // Update Risk Meter
+                // Update Hybrid Risk Meter
                 document.getElementById('meter-risk').innerText = r.toFixed(4);
                 const riskBar = document.getElementById('bar-risk');
                 const riskPct = r * 100;
@@ -939,6 +991,46 @@
                     document.getElementById('meter-risk').style.color = "var(--accent-rose)";
                 }
 
+                // Update ML Trajectory Model Card
+                const mlRisk = metrics.ml_risk || 0.0;
+                const pattern = metrics.attack_pattern || "BENIGN";
+                const conf = metrics.ml_confidence || 1.0;
+                const topFactors = metrics.top_factors || [];
+
+                document.getElementById('meter-ml-risk').innerText = mlRisk.toFixed(4);
+                const mlBar = document.getElementById('bar-ml-risk');
+                const mlPct = mlRisk * 100;
+                mlBar.style.width = mlPct + '%';
+
+                const patternBadge = document.getElementById('meter-attack-pattern');
+                const mlDesc = document.getElementById('meter-ml-desc');
+
+                if (pattern === 'BENIGN') {
+                    patternBadge.className = "risk-badge risk-safe";
+                    patternBadge.innerText = "BENIGN";
+                    mlBar.style.backgroundColor = "var(--accent-emerald)";
+                    document.getElementById('meter-ml-risk').style.color = "var(--accent-emerald)";
+                    mlDesc.innerText = `Confidence: ${(conf * 100).toFixed(0)}% · Normal Analytical Workflow`;
+                } else if (pattern === 'DIFFERENCING') {
+                    patternBadge.className = "risk-badge risk-high";
+                    patternBadge.innerText = "DIFFERENCING PROBE";
+                    mlBar.style.backgroundColor = "var(--accent-rose)";
+                    document.getElementById('meter-ml-risk').style.color = "var(--accent-rose)";
+                    mlDesc.innerText = `[ALERT] ${topFactors[0] || 'Single-record exclusion delta detected'}`;
+                } else if (pattern === 'TRIANGULATION') {
+                    patternBadge.className = "risk-badge risk-high";
+                    patternBadge.innerText = "TRIANGULATION";
+                    mlBar.style.backgroundColor = "var(--accent-rose)";
+                    document.getElementById('meter-ml-risk').style.color = "var(--accent-rose)";
+                    mlDesc.innerText = `[ALERT] ${topFactors[0] || 'Progressive subpopulation narrowing'}`;
+                } else {
+                    patternBadge.className = "risk-badge risk-medium";
+                    patternBadge.innerText = pattern;
+                    mlBar.style.backgroundColor = "var(--accent-amber)";
+                    document.getElementById('meter-ml-risk').style.color = "var(--accent-amber)";
+                    mlDesc.innerText = `[ALERT] ${topFactors[0] || 'Quasi-identifier correlation'}`;
+                }
+
                 // Update Epsilon
                 document.getElementById('meter-epsilon').innerText = effEps.toFixed(4);
                 document.getElementById('bar-epsilon').style.width = Math.min(100, effEps * 50) + '%';
@@ -952,7 +1044,7 @@
                     updateBudget(data.user.epsilon_remaining);
                 }
 
-                showToast(`Success: DP noise applied (ε_eff=${effEps.toFixed(3)}, b=${noise.toFixed(2)})`);
+                showToast(`Success: DP noise applied (ε_eff=${effEps.toFixed(3)}, b=${noise.toFixed(2)}, ML=${pattern})`);
                 loadHistory(username);
 
             } catch (err) {
@@ -1004,6 +1096,9 @@
             } else if (scenario === 'sqli') {
                 sqlEl.value = "SELECT * FROM employees WHERE 1=1";
                 await submitQuery();
+            } else if (scenario === 'diff') {
+                sqlEl.value = "SELECT SUM(salary) FROM employees WHERE department = 'Engineering' AND id != 1002";
+                await submitQuery();
             }
         }
 
@@ -1014,4 +1109,5 @@
         });
     </script>
 </body>
+
 </html>

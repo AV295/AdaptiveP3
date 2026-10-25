@@ -96,8 +96,8 @@ def benchmark_triangulation_attack():
         ("Probe 6 (Post-threshold)", "SELECT AVG(salary) FROM employees WHERE department = 'Engineering' AND age = 32"),
     ]
 
-    print(f"{'Step':<24} | {'Static Base ε':<14} | {'Static Error':<13} | {'AP3 Risk r':<11} | {'AP3 ε_eff':<10} | {'AP3 Error':<12} | {'AP3 Status'}")
-    print("-" * 115)
+    print(f"{'Step':<24} | {'Static Base ε':<14} | {'Static Error':<13} | {'Hybrid r':<9} | {'ML Pattern':<15} | {'AP3 ε_eff':<10} | {'AP3 Error':<10} | {'AP3 Status'}")
+    print("-" * 130)
 
     remaining_eps = session_eps
     threshold_limit = 4  # Static baseline blocks at > 4 queries
@@ -123,6 +123,7 @@ def benchmark_triangulation_attack():
             predicates=analysis.predicates,
             has_where=analysis.has_where,
             raw_sql=sql,
+            aggregates=analysis.aggregates,
         )
 
         is_degraded = (remaining_eps <= 0.05) or risk.is_degraded
@@ -133,7 +134,6 @@ def benchmark_triangulation_attack():
             base_alloc = min(remaining_eps, nominal_query_eps)
             eff_eps = compute_effective_epsilon(base_alloc, risk.risk_score, gamma=2.0, min_epsilon=0.05)
             ap3_status = "ACTIVE (Coupled)"
-
 
         ap3_val = add_laplace_noise(target_true_salary, epsilon=eff_eps, sensitivity=analysis.sensitivity)
         ap3_error = abs(ap3_val - target_true_salary)
@@ -153,8 +153,59 @@ def benchmark_triangulation_attack():
 
         print(
             f"{label:<24} | {static_eps:<14.2f} | {static_error_str:<13} | "
-            f"{risk.risk_score:<11.4f} | {eff_eps:<10.4f} | {ap3_error:<12.2f} | {ap3_status}"
+            f"{risk.risk_score:<9.4f} | {risk.attack_pattern:<15} | {eff_eps:<10.4f} | {ap3_error:<10.2f} | {ap3_status}"
         )
+
+
+def benchmark_differencing_attack():
+    """
+    Benchmark 3: Multi-Query Differencing Attack Simulation.
+    Simulates complementary pairs Q1 and Q2 isolating an individual record (target ID 1002).
+    Shows how the ML Trajectory Model immediately detects the single-record delta.
+    """
+    print("\n" + "=" * 70)
+    print("BENCHMARK 3: Adversarial Differencing Attack Simulation (Q1 vs Q2 Delta)")
+    print("=" * 70)
+    clear_test_history()
+
+    username = "diff_adversary"
+    diff_queries = [
+        ("Step 1 (Base Group)", "SELECT SUM(salary) FROM employees WHERE department = 'Engineering'"),
+        ("Step 2 (Exclusion Probe)", "SELECT SUM(salary) FROM employees WHERE department = 'Engineering' AND id != 1002"),
+        ("Step 3 (Target Verification)", "SELECT AVG(salary) FROM employees WHERE id = 1002"),
+    ]
+
+    print(f"{'Probe':<26} | {'SQL Query':<48} | {'ML Pattern':<15} | {'ML Conf':<9} | {'r_final':<9} | {'Action Taken'}")
+    print("-" * 130)
+
+    for label, sql in diff_queries:
+        analysis = analyze_query(sql)
+        risk = assess_inference_risk(
+            username=username,
+            tables=analysis.tables,
+            columns=analysis.columns,
+            predicates=analysis.predicates,
+            has_where=analysis.has_where,
+            raw_sql=sql,
+            aggregates=analysis.aggregates,
+        )
+
+        eff_eps = compute_effective_epsilon(1.0, risk.risk_score, gamma=2.0, min_epsilon=0.05)
+        action = f"Degraded (eps={eff_eps:.3f})" if risk.is_degraded else f"Coupled (eps={eff_eps:.3f})"
+
+        record_query(
+            username=username,
+            tables=analysis.tables,
+            columns=analysis.columns,
+            predicates=analysis.predicates,
+            has_where=analysis.has_where,
+            raw_sql=sql,
+            risk_score=risk.risk_score,
+            effective_epsilon=eff_eps,
+        )
+
+        sql_short = sql if len(sql) <= 46 else sql[:43] + "..."
+        print(f"{label:<26} | {sql_short:<48} | {risk.attack_pattern:<15} | {risk.ml_confidence:<9.2f} | {risk.risk_score:<9.4f} | {action}")
 
 
 def benchmark_latency_overhead():
@@ -208,4 +259,5 @@ def benchmark_latency_overhead():
 if __name__ == "__main__":
     benchmark_privacy_utility()
     benchmark_triangulation_attack()
+    benchmark_differencing_attack()
     benchmark_latency_overhead()
