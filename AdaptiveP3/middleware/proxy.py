@@ -66,7 +66,7 @@ def process_query(user: User, raw_sql: str) -> dict:
             detail="Access Denied: Only SELECT queries are permitted for your role.",
         )
 
-    # ── 4. Live Triangulation Risk Signal r(u, q) ────────────────────
+    # ── 4. Live Hybrid Triangulation Risk Signal r(u, q) ─────────────
     risk = assess_inference_risk(
         username=user.username,
         tables=analysis.tables,
@@ -74,6 +74,7 @@ def process_query(user: User, raw_sql: str) -> dict:
         predicates=analysis.predicates,
         has_where=analysis.has_where,
         raw_sql=raw_sql,
+        aggregates=analysis.aggregates,
     )
 
     # ── 5. Dynamic Risk-to-Epsilon Coupling & Degradation Schedule ──
@@ -164,6 +165,12 @@ def process_query(user: User, raw_sql: str) -> dict:
         },
         "privacy_metrics": {
             "risk_score": risk.risk_score,
+            "heuristic_risk": risk.heuristic_risk,
+            "ml_risk": risk.ml_risk,
+            "attack_pattern": risk.attack_pattern,
+            "ml_confidence": risk.ml_confidence,
+            "top_factors": risk.top_factors,
+            "ml_latency_ms": risk.ml_latency_ms,
             "raw_risk": risk.raw_risk,
             "effective_epsilon": eff_eps,
             "noise_scale": noise_scale,

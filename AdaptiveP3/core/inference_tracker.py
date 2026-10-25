@@ -25,6 +25,7 @@ from config import (
     RISK_WEIGHT_PREDICATE,
     DEGRADATION_RISK_THRESHOLD,
 )
+from core.ml_risk_model import evaluate_ml_risk
 
 
 class InferenceRisk:
@@ -39,6 +40,12 @@ class InferenceRisk:
         raw_risk: float,
         reason: str | None = None,
         details: dict | None = None,
+        heuristic_risk: float = 0.0,
+        ml_risk: float = 0.0,
+        attack_pattern: str = "BENIGN",
+        ml_confidence: float = 1.0,
+        top_factors: list[str] | None = None,
+        ml_latency_ms: float = 0.0,
     ):
         self.risk_score = round(risk_score, 4)
         self.is_blocked = is_blocked
@@ -47,6 +54,12 @@ class InferenceRisk:
         self.raw_risk = round(raw_risk, 4)
         self.reason = reason
         self.details = details or {}
+        self.heuristic_risk = round(heuristic_risk, 4)
+        self.ml_risk = round(ml_risk, 4)
+        self.attack_pattern = attack_pattern
+        self.ml_confidence = round(ml_confidence, 4)
+        self.top_factors = top_factors or []
+        self.ml_latency_ms = round(ml_latency_ms, 3)
 
 
 def _jaccard_similarity(set_a: set, set_b: set) -> float:
@@ -113,52 +126,23 @@ def assess_inference_risk(
     predicates: list[str] | None = None,
     has_where: bool = False,
     raw_sql: str = "",
+    aggregates: list[str] | None = None,
     alpha_scale: float = 0.35,
 ) -> InferenceRisk:
     """
-    Calculate continuous triangulation risk r(u, q) in [0, 1) across query history.
-
-    Parameters
-    ----------
-    username : str
-        The requesting user identifier.
-    tables : list[str]
-        Tables referenced in the query.
-    columns : list[str]
-        Columns queried or filtered.
-    predicates : list[str]
-        WHERE predicates extracted from AST.
-    has_where : bool
-        Whether query has a filter condition.
-    raw_sql : str
-        The full SQL query text.
-    alpha_scale : float
-        Sensitivity calibration exponent for cumulative risk summation.
-
-    Returns
-    -------
-    InferenceRisk
-        Object containing continuous risk_score in [0, 1), degradation trigger,
-        and overlap diagnostics.
+    Calculate hybrid continuous inference risk r(u, q) in [0, 1) across query history,
+    arbitrating between the deterministic AST overlap formulation and the trained
+    trajectory ensemble classifier.
     """
     predicates = predicates or []
+    aggregates = aggregates or []
     overlaps = get_overlapping_queries(
         username, tables, window_seconds=INFERENCE_WINDOW_SECONDS
     )
     overlap_count = len(overlaps)
-
-    if overlap_count == 0:
-        return InferenceRisk(
-            risk_score=0.0,
-            is_blocked=False,
-            is_degraded=False,
-            overlap_count=0,
-            raw_risk=0.0,
-            reason="No overlapping query history found.",
-            details={"max_single_overlap": 0.0, "time_decay_sum": 0.0},
-        )
-
     now = time.time()
+
+    # 1. Deterministic Heuristic Risk Calculation
     accumulated_risk = 0.0
     max_single_overlap = 0.0
 
@@ -177,25 +161,52 @@ def assess_inference_risk(
         max_single_overlap = max(max_single_overlap, pairwise_overlap)
         accumulated_risk += pairwise_overlap * time_decay
 
-    # Continuous risk signal r(u, q) in [0, 1)
-    # r = 1 - exp(-alpha * accumulated_risk)
-    r_val = 1.0 - math.exp(-alpha_scale * accumulated_risk)
-    r_val = max(0.0, min(r_val, 0.9999))
+    r_heuristic = 1.0 - math.exp(-alpha_scale * accumulated_risk) if overlap_count > 0 else 0.0
+    r_heuristic = max(0.0, min(r_heuristic, 0.9999))
 
-    is_degraded = r_val >= DEGRADATION_RISK_THRESHOLD
+    # 2. Machine Learning Trajectory Evaluation
+    ml_eval = evaluate_ml_risk(
+        tables=tables,
+        columns=columns,
+        predicates=predicates,
+        has_where=has_where,
+        aggregates=aggregates,
+        history_queries=overlaps,
+        current_timestamp=now,
+    )
+
+    # 3. Patentable Hybrid Arbitration: r_final = max(r_heuristic, r_ML)
+    # Guarantees mathematical lower bound while catching subtle sequential attack patterns
+    r_final = max(r_heuristic, ml_eval.ml_risk_score)
+    r_final = max(0.0, min(r_final, 0.9999))
+
+    is_degraded = r_final >= DEGRADATION_RISK_THRESHOLD
 
     reason = None
     if is_degraded:
+        if ml_eval.is_attack:
+            reason = (
+                f"Severe {ml_eval.attack_pattern} pattern detected by ML model "
+                f"(confidence={ml_eval.confidence:.2f}, r={r_final:.3f} >= {DEGRADATION_RISK_THRESHOLD}). "
+                f"Routed to graceful degradation with noise floor."
+            )
+        else:
+            reason = (
+                f"High triangulation risk detected (r = {r_final:.3f} >= {DEGRADATION_RISK_THRESHOLD}). "
+                f"Query is routed to graceful degradation with elevated noise."
+            )
+    elif ml_eval.is_attack:
         reason = (
-            f"High triangulation risk detected (r = {r_val:.3f} >= {DEGRADATION_RISK_THRESHOLD}). "
-            f"Query is routed to graceful degradation with elevated noise."
+            f"Adversarial {ml_eval.attack_pattern} probe pattern identified "
+            f"(ML score={ml_eval.ml_risk_score:.3f}, confidence={ml_eval.confidence:.2f}). "
+            f"Effective epsilon downscaled."
         )
-    elif r_val > 0.4:
-        reason = f"Moderate triangulation risk (r = {r_val:.3f}). Effective epsilon will be reduced."
+    elif r_final > 0.4:
+        reason = f"Moderate query correlation (r = {r_final:.3f}). Effective epsilon will be reduced."
 
     return InferenceRisk(
-        risk_score=r_val,
-        is_blocked=False,  # Replaced hard blocking with graceful degradation schedule (O2)
+        risk_score=r_final,
+        is_blocked=False,
         is_degraded=is_degraded,
         overlap_count=overlap_count,
         raw_risk=accumulated_risk,
@@ -205,4 +216,10 @@ def assess_inference_risk(
             "accumulated_risk": round(accumulated_risk, 4),
             "overlap_count": overlap_count,
         },
+        heuristic_risk=r_heuristic,
+        ml_risk=ml_eval.ml_risk_score,
+        attack_pattern=ml_eval.attack_pattern,
+        ml_confidence=ml_eval.confidence,
+        top_factors=ml_eval.top_factors,
+        ml_latency_ms=ml_eval.latency_ms,
     )
